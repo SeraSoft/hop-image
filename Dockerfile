@@ -17,7 +17,7 @@ RUN git clone --depth 1 --branch ${HOP_BRANCH} ${HOP_REPO} hop
 
 WORKDIR /build/hop
 
-RUN mvn -DskipTests=true clean install
+RUN mvn -q -DskipTests=true clean install
 
 RUN echo "=== assemblies structure ===" && find /build/hop/assemblies -maxdepth 4 | sort
 
