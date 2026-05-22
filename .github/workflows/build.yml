@@ -3,8 +3,16 @@ name: Build and publish Docker image
 on:
   workflow_dispatch:
     inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'stable'
+        type: choice
+        options:
+          - stable
+          - development
       hop_version:
-        description: 'Hop version to build (e.g. 2.16.2). Leave empty to use the latest stable release.'
+        description: 'Hop version to build (e.g. 2.16.2). Stable only. Leave empty to use the latest stable release.'
         required: false
         default: ''
 
@@ -23,34 +31,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve Hop version
-        id: version
+      - name: Resolve build parameters
+        id: params
         run: |
-          INPUT_VERSION="${{ github.event.inputs.hop_version }}"
+          BUILD_TYPE="${{ github.event.inputs.build_type }}"
 
-          if [[ -n "$INPUT_VERSION" ]]; then
-            HOP_VERSION="$INPUT_VERSION"
-            echo "📌 Using specified version: $HOP_VERSION"
+          if [[ "$BUILD_TYPE" == "development" ]]; then
+            HOP_BRANCH="main"
+            IMAGE_TAG="dev"
+            EXTRA_TAG=""
+            echo "🛠️  Development build from branch 'main', image tag: dev"
           else
-            echo "🔍 Fetching latest stable release from SeraSoft/hop..."
-            TAGS_JSON=$(curl -sf "https://api.github.com/repos/SeraSoft/hop/git/refs/tags")
-            HOP_VERSION=$(
-              echo "$TAGS_JSON" \
-                | grep '"ref":' \
-                | sed 's|.*refs/tags/||;s|".*||' \
-                | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
-                | sort -V \
-                | tail -1
-            )
-            echo "✅ Resolved latest stable version: $HOP_VERSION"
+            INPUT_VERSION="${{ github.event.inputs.hop_version }}"
+            if [[ -n "$INPUT_VERSION" ]]; then
+              HOP_BRANCH="$INPUT_VERSION"
+              IMAGE_TAG="$INPUT_VERSION"
+              echo "📌 Stable build, specified version: $INPUT_VERSION"
+            else
+              echo "🔍 Fetching latest stable release from SeraSoft/hop..."
+              TAGS_JSON=$(curl -sf "https://api.github.com/repos/SeraSoft/hop/git/refs/tags")
+              IMAGE_TAG=$(
+                echo "$TAGS_JSON" \
+                  | grep '"ref":' \
+                  | sed 's|.*refs/tags/||;s|".*||' \
+                  | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+                  | sort -V \
+                  | tail -1
+              )
+              HOP_BRANCH="$IMAGE_TAG"
+              echo "✅ Resolved latest stable version: $IMAGE_TAG"
+            fi
+            EXTRA_TAG="latest"
           fi
 
-          if [[ -z "$HOP_VERSION" ]]; then
-            echo "❌ Could not determine Hop version." >&2
+          if [[ -z "$IMAGE_TAG" ]]; then
+            echo "❌ Could not determine version." >&2
             exit 1
           fi
 
-          echo "hop_version=$HOP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "hop_branch=$HOP_BRANCH"   >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG"     >> "$GITHUB_OUTPUT"
+          echo "extra_tag=$EXTRA_TAG"     >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -62,7 +83,8 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
+      - name: Build and push (stable)
+        if: github.event.inputs.build_type == 'stable'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -70,23 +92,53 @@ jobs:
           push: true
           build-args: |
             HOP_REPO=https://github.com/SeraSoft/hop.git
-            HOP_BRANCH=${{ steps.version.outputs.hop_version }}
-            HOP_VERSION=${{ steps.version.outputs.hop_version }}
+            HOP_BRANCH=${{ steps.params.outputs.hop_branch }}
+            HOP_VERSION=${{ steps.params.outputs.image_tag }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.hop_version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.params.outputs.image_tag }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.version.outputs.hop_version }}
+            org.opencontainers.image.version=${{ steps.params.outputs.image_tag }}
 
-      - name: Summary
+      - name: Build and push (development)
+        if: github.event.inputs.build_type == 'development'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          build-args: |
+            HOP_REPO=https://github.com/SeraSoft/hop.git
+            HOP_BRANCH=main
+            HOP_VERSION=dev
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=dev
+
+      - name: Summary (stable)
+        if: github.event.inputs.build_type == 'stable'
         run: |
           echo "### ✅ Image published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Tag | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| versioned | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.hop_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| versioned | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.params.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| latest    | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Summary (development)
+        if: github.event.inputs.build_type == 'development'
+        run: |
+          echo "### ✅ Image published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| dev | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev\` |" >> $GITHUB_STEP_SUMMARY

@@ -11,9 +11,14 @@ ghcr.io/serasoft/hop-image:<version>   # e.g. ghcr.io/serasoft/hop-image:2.16.2
 
 ## How it works
 
-A GitHub Actions workflow builds and pushes the image on every push to `main`. It can also be triggered manually from the Actions tab, optionally specifying a target Hop version.
+The workflow is triggered manually from the Actions tab and supports two build types:
 
-If no version is specified, the workflow resolves the latest stable release tag (format `X.Y.Z`) from the SeraSoft Hop fork automatically.
+| Build type | Branch | Tags published |
+|------------|--------|----------------|
+| `stable` | release tag (e.g. `2.16.2`) | `2.16.2`, `latest` |
+| `development` | `main` | `dev` |
+
+For stable builds, if no version is specified the workflow resolves the latest stable release tag (format `X.Y.Z`) from the SeraSoft Hop fork automatically.
 
 The image is built using a two-stage Dockerfile:
 
@@ -24,9 +29,10 @@ Build layers are cached via GitHub Actions cache (`type=gha`) to speed up subseq
 
 ## Triggering a build manually
 
-Go to **Actions → Build and publish Docker image → Run workflow**.
+Go to **Actions → Build and publish Docker image → Run workflow** and select the build type:
 
-You can optionally enter a specific version (e.g. `2.16.2`). Leave the field empty to build the latest stable release.
+- **stable** — optionally specify a version (e.g. `2.16.2`); leave empty to use the latest stable release automatically.
+- **development** — builds from the `main` branch of the SeraSoft fork and publishes as `dev`.
 
 ## Running the image
 
