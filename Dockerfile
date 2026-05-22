@@ -1,7 +1,7 @@
 # =============================================================================
 # STAGE 1: BUILD HOP
 # =============================================================================
-FROM eclipse-temurin:17-jdk-jammy AS hop-builder
+FROM eclipse-temurin:21-jdk-jammy AS hop-builder
 
 ARG HOP_REPO=https://github.com/SeraSoft/hop.git
 ARG HOP_BRANCH=main
@@ -54,7 +54,7 @@ RUN addgroup -g ${HOP_GID} -S hop \
     && adduser -u ${HOP_UID} -S -G hop hop \
     && apk add --no-cache \
         bash \
-        openjdk17-jre \
+        openjdk21-jre \
         fontconfig \
         ttf-dejavu \
     && fc-cache -f \

@@ -22,7 +22,7 @@ For stable builds, if no version is specified the workflow resolves the latest s
 
 The image is built using a two-stage Dockerfile:
 
-- **hop-builder** — clones and compiles the SeraSoft fork using Maven and JDK 17.
+- **hop-builder** — clones and compiles the SeraSoft fork using Maven and JDK 21.
 - **runtime** — Alpine-based final image with only the Hop binaries and the official entrypoint scripts.
 
 Build layers are cached via GitHub Actions cache (`type=gha`) to speed up subsequent builds.
