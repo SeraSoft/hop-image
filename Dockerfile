@@ -9,6 +9,7 @@ ARG HOP_BRANCH=main
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         maven \
+        unzip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -17,7 +18,10 @@ RUN git clone --depth 1 --branch ${HOP_BRANCH} ${HOP_REPO} hop
 
 WORKDIR /build/hop
 
-RUN mvn -DskipTests=true clean install
+RUN mvn -q -DskipTests=true clean install
+
+# Extract the assembly zip so the runtime stage can COPY the directory
+RUN unzip -q /build/hop/assemblies/static/target/hop-assemblies-static-*.zip -d /build/hop-dist
 
 # =============================================================================
 # STAGE 2: RUNTIME
@@ -64,7 +68,7 @@ RUN addgroup -g ${HOP_GID} -S hop \
     && chown hop:hop ${DEPLOYMENT_PATH} \
     && chown hop:hop ${VOLUME_MOUNT_POINT}
 
-COPY --from=hop-builder --chown=hop:hop /build/hop/assemblies/client/target/hop/           ${DEPLOYMENT_PATH}/
+COPY --from=hop-builder --chown=hop:hop /build/hop-dist/                                   ${DEPLOYMENT_PATH}/
 COPY --from=hop-builder --chown=hop:hop /build/hop/docker/resources/run.sh                 ${DEPLOYMENT_PATH}/run.sh
 COPY --from=hop-builder --chown=hop:hop /build/hop/docker/resources/load-and-execute.sh   ${DEPLOYMENT_PATH}/load-and-execute.sh
 
