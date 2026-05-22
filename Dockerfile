@@ -19,6 +19,8 @@ WORKDIR /build/hop
 
 RUN mvn -DskipTests=true clean install
 
+RUN echo "=== assemblies structure ===" && find /build/hop/assemblies -maxdepth 4 | sort
+
 # =============================================================================
 # STAGE 2: RUNTIME
 # =============================================================================
