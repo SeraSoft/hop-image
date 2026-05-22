@@ -1,0 +1,92 @@
+name: Build and publish Docker image
+
+on:
+  workflow_dispatch:
+    inputs:
+      hop_version:
+        description: 'Hop version to build (e.g. 2.16.2). Leave empty to use the latest stable release.'
+        required: false
+        default: ''
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve Hop version
+        id: version
+        run: |
+          INPUT_VERSION="${{ github.event.inputs.hop_version }}"
+
+          if [[ -n "$INPUT_VERSION" ]]; then
+            HOP_VERSION="$INPUT_VERSION"
+            echo "📌 Using specified version: $HOP_VERSION"
+          else
+            echo "🔍 Fetching latest stable release from SeraSoft/hop..."
+            TAGS_JSON=$(curl -sf "https://api.github.com/repos/SeraSoft/hop/git/refs/tags")
+            HOP_VERSION=$(
+              echo "$TAGS_JSON" \
+                | grep '"ref":' \
+                | sed 's|.*refs/tags/||;s|".*||' \
+                | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+                | sort -V \
+                | tail -1
+            )
+            echo "✅ Resolved latest stable version: $HOP_VERSION"
+          fi
+
+          if [[ -z "$HOP_VERSION" ]]; then
+            echo "❌ Could not determine Hop version." >&2
+            exit 1
+          fi
+
+          echo "hop_version=$HOP_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          build-args: |
+            HOP_REPO=https://github.com/SeraSoft/hop.git
+            HOP_BRANCH=${{ steps.version.outputs.hop_version }}
+            HOP_VERSION=${{ steps.version.outputs.hop_version }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.hop_version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.hop_version }}
+
+      - name: Summary
+        run: |
+          echo "### ✅ Image published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| versioned | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.hop_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| latest    | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\` |" >> $GITHUB_STEP_SUMMARY
