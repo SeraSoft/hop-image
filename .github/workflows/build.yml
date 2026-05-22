@@ -19,6 +19,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-and-push:
@@ -34,12 +35,15 @@ jobs:
       - name: Resolve build parameters
         id: params
         run: |
+          # Normalize repository name to lowercase for GHCR
+          IMAGE_NAME_LC=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+          echo "image_name=$IMAGE_NAME_LC" >> "$GITHUB_OUTPUT"
+
           BUILD_TYPE="${{ github.event.inputs.build_type }}"
 
           if [[ "$BUILD_TYPE" == "development" ]]; then
             HOP_BRANCH="main"
             IMAGE_TAG="dev"
-            EXTRA_TAG=""
             echo "🛠️  Development build from branch 'main', image tag: dev"
           else
             INPUT_VERSION="${{ github.event.inputs.hop_version }}"
@@ -61,7 +65,6 @@ jobs:
               HOP_BRANCH="$IMAGE_TAG"
               echo "✅ Resolved latest stable version: $IMAGE_TAG"
             fi
-            EXTRA_TAG="latest"
           fi
 
           if [[ -z "$IMAGE_TAG" ]]; then
@@ -69,9 +72,8 @@ jobs:
             exit 1
           fi
 
-          echo "hop_branch=$HOP_BRANCH"   >> "$GITHUB_OUTPUT"
-          echo "image_tag=$IMAGE_TAG"     >> "$GITHUB_OUTPUT"
-          echo "extra_tag=$EXTRA_TAG"     >> "$GITHUB_OUTPUT"
+          echo "hop_branch=$HOP_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG"   >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -95,8 +97,8 @@ jobs:
             HOP_BRANCH=${{ steps.params.outputs.hop_branch }}
             HOP_VERSION=${{ steps.params.outputs.image_tag }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.params.outputs.image_tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ steps.params.outputs.image_name }}:${{ steps.params.outputs.image_tag }}
+            ${{ env.REGISTRY }}/${{ steps.params.outputs.image_name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |
@@ -116,7 +118,7 @@ jobs:
             HOP_BRANCH=main
             HOP_VERSION=dev
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev
+            ${{ env.REGISTRY }}/${{ steps.params.outputs.image_name }}:dev
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |
@@ -131,8 +133,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Tag | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| versioned | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.params.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| latest    | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| versioned | \`${{ env.REGISTRY }}/${{ steps.params.outputs.image_name }}:${{ steps.params.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| latest    | \`${{ env.REGISTRY }}/${{ steps.params.outputs.image_name }}:latest\` |" >> $GITHUB_STEP_SUMMARY
 
       - name: Summary (development)
         if: github.event.inputs.build_type == 'development'
@@ -141,4 +143,4 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Tag | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| dev | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| dev | \`${{ env.REGISTRY }}/${{ steps.params.outputs.image_name }}:dev\` |" >> $GITHUB_STEP_SUMMARY
