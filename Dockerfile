@@ -6,22 +6,27 @@ FROM eclipse-temurin:21-jdk-jammy AS hop-builder
 ARG HOP_REPO=https://github.com/SeraSoft/hop.git
 ARG HOP_BRANCH=main
 
+WORKDIR /build
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         maven \
         unzip \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /build
-
-RUN git clone --depth 1 --branch ${HOP_BRANCH} ${HOP_REPO} hop
+RUN git clone --depth=1 --branch ${HOP_BRANCH} ${HOP_REPO} hop
 
 WORKDIR /build/hop
 
+# Build sequenziale (no -T 4): evita race condition nei moduli assembly.
+# Il modulo assemblies/static produce lo zip con tutti i binari.
 RUN mvn -q -DskipTests=true clean install
 
-# Extract the assembly zip so the runtime stage can COPY the directory
-RUN unzip -q /build/hop/assemblies/static/target/hop-assemblies-static-*.zip -d /build/hop-dist
+# Estrai lo zip: contiene una cartella radice "hop/" con lib, plugins ecc.
+RUN mkdir -p /opt/hop-dist && \
+    unzip -q assemblies/static/target/hop-assemblies-static-*.zip -d /opt/hop-dist-raw && \
+    mv /opt/hop-dist-raw/hop/* /opt/hop-dist/ && \
+    rm -rf /opt/hop-dist-raw
 
 # =============================================================================
 # STAGE 2: RUNTIME
@@ -68,9 +73,9 @@ RUN addgroup -g ${HOP_GID} -S hop \
     && chown hop:hop ${DEPLOYMENT_PATH} \
     && chown hop:hop ${VOLUME_MOUNT_POINT}
 
-COPY --from=hop-builder --chown=hop:hop /build/hop-dist/                                   ${DEPLOYMENT_PATH}/
-COPY --from=hop-builder --chown=hop:hop /build/hop/docker/resources/run.sh                 ${DEPLOYMENT_PATH}/run.sh
-COPY --from=hop-builder --chown=hop:hop /build/hop/docker/resources/load-and-execute.sh   ${DEPLOYMENT_PATH}/load-and-execute.sh
+COPY --from=hop-builder --chown=hop:hop /opt/hop-dist/                                    ${DEPLOYMENT_PATH}/
+COPY --from=hop-builder --chown=hop:hop /build/hop/docker/resources/run.sh                ${DEPLOYMENT_PATH}/run.sh
+COPY --from=hop-builder --chown=hop:hop /build/hop/docker/resources/load-and-execute.sh  ${DEPLOYMENT_PATH}/load-and-execute.sh
 
 EXPOSE 8080 8079
 
