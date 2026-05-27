@@ -18,13 +18,13 @@ RUN git clone --depth=1 --branch ${HOP_BRANCH} ${HOP_REPO} hop
 
 WORKDIR /build/hop
 
-# Build sequenziale (no -T 4): evita race condition nei moduli assembly.
-# Il modulo assemblies/static produce lo zip con tutti i binari.
+# Sequential build (no -T 4): prevents race conditions in assembly modules.
+# The assemblies/client module produces the zip with all binaries (lib, plugins, etc.)
 RUN mvn -q -DskipTests=true clean install
 
-# Estrai lo zip: contiene una cartella radice "hop/" con lib, plugins ecc.
+# Extract the zip: it contains a root "hop/" folder with lib, plugins, etc.
 RUN mkdir -p /opt/hop-dist && \
-    unzip -q assemblies/static/target/hop-assemblies-static-*.zip -d /opt/hop-dist-raw && \
+    unzip -q assemblies/client/target/hop-client-*.zip -d /opt/hop-dist-raw && \
     mv /opt/hop-dist-raw/hop/* /opt/hop-dist/ && \
     rm -rf /opt/hop-dist-raw
 
